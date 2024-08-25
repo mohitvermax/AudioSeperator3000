@@ -153,50 +153,59 @@ void MainComponent::createSpectrogram()
     }
 }
 
-void MainComponent::inverseFFT()
-{
-    const int fftSize = fft.getSize();
-    const int numChannels = audioBuffer.getNumChannels();
-    const int numSamples = audioBuffer.getNumSamples();
+// void MainComponent::inverseFFT()
+// {
+//     const int fftSize = fft.getSize();
+//     const int numChannels = audioBuffer.getNumChannels();
+//     const int numSamples = audioBuffer.getNumSamples();
 
-    if (numChannels == 0 || numSamples == 0)
-    {
-        DBG("Invalid audio buffer in inverseFFT");
-        return;
-    }
+//     if (numChannels == 0 || numSamples == 0)
+//     {
+//         DBG("Invalid audio buffer in inverseFFT");
+//         return;
+//     }
 
-    // Create a new buffer for the inverse FFT result
-    juce::AudioSampleBuffer inversedBuffer(numChannels, numSamples);
+//     // Create a new buffer for the inverse FFT result
+//     juce::AudioSampleBuffer inversedBuffer(numChannels, numSamples);
 
-    for (int channel = 0; channel < numChannels; ++channel)
-    {
-        float *channelData = inversedBuffer.getWritePointer(channel);
-        const float *originalData = audioBuffer.getReadPointer(channel);
+//     for (int channel = 0; channel < numChannels; ++channel)
+//     {
+//         float *channelData = inversedBuffer.getWritePointer(channel);
+//         const float *originalData = audioBuffer.getReadPointer(channel);
 
-        for (int sample = 0; sample + fftSize <= numSamples; sample += fftSize)
-        {
-            // Copy original data to fftData
-            juce::FloatVectorOperations::copy(fftData.data(), originalData + sample, fftSize);
+//         for (int sample = 0; sample + fftSize <= numSamples; sample += fftSize)
+//         {
+//             // Copy original data to fftData
+//             juce::FloatVectorOperations::copy(fftData.data(), originalData + sample, fftSize);
 
-            // Zero out the imaginary part
-            juce::FloatVectorOperations::clear(fftData.data() + fftSize, fftSize);
+//             // Zero out the imaginary part
+//             juce::FloatVectorOperations::clear(fftData.data() + fftSize, fftSize);
 
-            // Perform inverse FFT
-            fft.performRealOnlyInverseTransform(fftData.data());
+//             // Perform inverse FFT
+//             fft.performRealOnlyInverseTransform(fftData.data());
 
-            // Copy the real part of the inverse FFT result to the output buffer
-            juce::FloatVectorOperations::copy(channelData + sample, fftData.data(), fftSize);
-        }
-    }
+//             // Copy the real part of the inverse FFT result to the output buffer
+//             juce::FloatVectorOperations::copy(channelData + sample, fftData.data(), fftSize);
+//         }
+//     }
 
-    // Replace the original audio buffer with the inverse FFT result
-    audioBuffer = inversedBuffer;
-}
+//     // Replace the original audio buffer with the inverse FFT result
+//     audioBuffer = inversedBuffer;
+// }
 
 void MainComponent::exportAudio()
 {
     // First, perform the inverse FFT
-    inverseFFT();
+    // inverseFFT();
+
+    // Check if the audio buffer is too large
+    if (audioBuffer.getNumSamples() > 44100 * 60 * 10) // Example: More than 10 minutes of audio at 44.1kHz
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Export Error",
+                                               "Audio buffer is too large for export.");
+        return;
+    }
 
     // Create a file chooser for saving the file
     exportFileChooser = std::make_unique<juce::FileChooser>("Save Audio File",
@@ -211,7 +220,7 @@ void MainComponent::exportAudio()
         if (file != juce::File{})
         {
             DBG("Selected file: " << file.getFullPathName());
-            
+
             if (audioBuffer.getNumChannels() == 0 || audioBuffer.getNumSamples() == 0)
             {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
@@ -220,20 +229,34 @@ void MainComponent::exportAudio()
                 return;
             }
 
-            // Create a WAV writer
-            juce::WavAudioFormat wavFormat;
-            std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(new juce::FileOutputStream(file),
-                                                            audioBuffer.getNumChannels(),
-                                                            44100.0,  // Sample rate
-                                                            16,       // Bit depth
-                                                            {},       // Metadata
-                                                            0         // Quality option (ignored for WAV)
-                                                            ));
+            // Assuming single-channel export (mono)
+            std::vector<float> singleChannelAudio(audioBuffer.getNumSamples());
+
+            // Copy the first channel to the singleChannelAudio vector
+            auto* channelData = audioBuffer.getReadPointer(0);
+            std::copy(channelData, channelData + audioBuffer.getNumSamples(), singleChannelAudio.begin());
+
+            // Create a new AudioBuffer to hold the single channel audio data
+            juce::AudioBuffer<float> buffer(1, (int)singleChannelAudio.size());
+            auto* ptr = buffer.getWritePointer(0);
+
+            for (int i = 0; i < (int)singleChannelAudio.size(); ++i)
+                ptr[i] = singleChannelAudio[i];
+
+            // Write the buffer to a WAV file
+            juce::WavAudioFormat format;
+            std::unique_ptr<juce::AudioFormatWriter> writer;
+            writer.reset(format.createWriterFor(new juce::FileOutputStream(file),
+                                                44100,    // Sample rate
+                                                1,        // Number of channels
+                                                16,       // Bit depth
+                                                {},       // Metadata
+                                                0));      // Quality option (ignored for WAV)
 
             if (writer != nullptr)
             {
-                // Write the audio data to the file
-                if (writer->writeFromAudioSampleBuffer(audioBuffer, 0, audioBuffer.getNumSamples()))
+                DBG("Writing " << buffer.getNumSamples() << " samples");
+                if (writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples()))
                 {
                     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
                                                            "Export Successful",
