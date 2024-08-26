@@ -27,14 +27,14 @@ MainComponent::MainComponent() : fft(12) // 2^12 = 4096 points
     band2Knob.setSliderStyle(juce::Slider::Rotary);
     band2Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
     band2Knob.setRange(0.0, 1.0, 0.01);
-    band2Knob.setValue(0.0);
+    band2Knob.setValue(1.0);
     band2Knob.addListener(this);
     addAndMakeVisible(band2Knob);
 
     band3Knob.setSliderStyle(juce::Slider::Rotary);
     band3Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
     band3Knob.setRange(0.0, 1.0, 0.01);
-    band3Knob.setValue(0.0);
+    band3Knob.setValue(1.0);
     band3Knob.addListener(this);
     addAndMakeVisible(band3Knob);
 
