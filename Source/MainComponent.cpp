@@ -16,11 +16,61 @@ MainComponent::MainComponent() : fft(12) // 2^12 = 4096 points
     isolateButton.setButtonText("Isolate Audio");
     isolateButton.addListener(this);
 
+    // Knobs and labels
+    band1Knob.setSliderStyle(juce::Slider::Rotary);
+    band1Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+    band1Knob.setRange(0.0, 1.0, 0.01);
+    band1Knob.setValue(1.0);
+    band1Knob.addListener(this);
+    addAndMakeVisible(band1Knob);
+
+    band2Knob.setSliderStyle(juce::Slider::Rotary);
+    band2Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+    band2Knob.setRange(0.0, 1.0, 0.01);
+    band2Knob.setValue(0.0);
+    band2Knob.addListener(this);
+    addAndMakeVisible(band2Knob);
+
+    band3Knob.setSliderStyle(juce::Slider::Rotary);
+    band3Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
+    band3Knob.setRange(0.0, 1.0, 0.01);
+    band3Knob.setValue(0.0);
+    band3Knob.addListener(this);
+    addAndMakeVisible(band3Knob);
+
+    band1Label.setText("Low Band", juce::dontSendNotification);
+    addAndMakeVisible(band1Label);
+
+    band2Label.setText("Mid Band", juce::dontSendNotification);
+    addAndMakeVisible(band2Label);
+
+    band3Label.setText("High Band", juce::dontSendNotification);
+    addAndMakeVisible(band3Label);
+
     formatManager.registerBasicFormats();
 }
 
 MainComponent::~MainComponent()
 {
+}
+
+void MainComponent::sliderValueChanged(juce::Slider *slider)
+{
+    if (slider == &band1Knob)
+    {
+        float band1Value = band1Knob.getValue();
+        // Handle band 1 value change
+    }
+    else if (slider == &band2Knob)
+    {
+        float band2Value = band2Knob.getValue();
+        // Handle band 2 value change
+    }
+    else if (slider == &band3Knob)
+    {
+        float band3Value = band3Knob.getValue();
+        // Handle band 3 value change
+    }
 }
 
 void MainComponent::paint(juce::Graphics &g)
@@ -42,6 +92,13 @@ void MainComponent::resized()
     loadButton.setBounds(10, 50, 150, 30);
     exportButton.setBounds(170, 50, 150, 30);
     isolateButton.setBounds(330, 50, 150, 30);
+    band1Knob.setBounds(10, 350, 150, 100);
+    band1Label.setBounds(85, 450, 150, 30);
+    band2Knob.setBounds(170, 350, 150, 100);
+    band2Label.setBounds(245, 450, 150, 30);
+
+    band3Knob.setBounds(330, 350, 150, 100);
+    band3Label.setBounds(405, 450, 150, 30);
 }
 
 void MainComponent::buttonClicked(juce::Button *button)
@@ -170,10 +227,9 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
 
     if (numChannels < 2)
     {
-        // We need stereo audio for this technique
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Error",
-                                               "Stereo audio is required for vocal removal.");
+                                               "Stereo audio is required for vocal isolation.");
         return;
     }
 
@@ -182,6 +238,15 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
     std::vector<float> rightChannel(fftSize);
 
     juce::AudioBuffer<float> processedBuffer(numChannels, numSamples);
+
+    // Get knob values (assuming they're in range 0.0 to 1.0)
+    float lowBandGain = band1Knob.getValue();
+    float midBandGain = band2Knob.getValue();
+    float highBandGain = band3Knob.getValue();
+
+    // Calculate frequency bin indices
+    int lowMidCutoff = (250.0f * fftSize / sampleRate);
+    int midHighCutoff = (5000.0f * fftSize / sampleRate);
 
     for (int sample = 0; sample + fftSize <= numSamples; sample += fftSize)
     {
@@ -203,10 +268,20 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
 
         std::vector<float> rightSpectrum(fftData.begin(), fftData.begin() + fftSize);
 
-        // Subtract right from left to remove center channel
-        for (int i = 0; i < fftSize; ++i)
+        // Add left and right to get center channel (vocals) and apply band gains
+        for (int i = 0; i < fftSize / 2; ++i)
         {
-            fftData[i] = leftSpectrum[i] - rightSpectrum[i];
+            float centerChannel = (leftSpectrum[i] - rightSpectrum[i]);
+
+            if (i < lowMidCutoff)
+                fftData[i] = centerChannel * lowBandGain;
+            else if (i < midHighCutoff)
+                fftData[i] = centerChannel * midBandGain;
+            else
+                fftData[i] = centerChannel * highBandGain;
+
+            // Mirror for negative frequencies (second half of FFT)
+            fftData[fftSize - i] = fftData[i];
         }
 
         // Inverse FFT

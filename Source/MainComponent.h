@@ -8,7 +8,8 @@
     your controls and content.
 */
 class MainComponent : public juce::Component,
-                      public juce::Button::Listener
+                      public juce::Button::Listener,
+                      public juce::Slider::Listener
 {
 public:
     //==============================================================================
@@ -23,23 +24,35 @@ public:
 private:
     //==============================================================================
     // Your private member variables go here...
+    double sampleRate = 48000.0;
     void loadAudioFile(const juce::File &file);
+    void applyFrequencyBandGains(juce::AudioBuffer<float> &buffer);
+    void removeVocals(juce::AudioBuffer<float> &buffer);
+
     void processAudio();
-    void bandpassFilter(std::vector<float>& signal, double sampleRate, double lowcut, double highcut);
-    void normalizeBass(juce::AudioBuffer<float>& buffer, float targetLevel);
+    void bandpassFilter(std::vector<float> &signal, double sampleRate, double lowcut, double highcut);
+    void normalizeBass(juce::AudioBuffer<float> &buffer, float targetLevel);
     void createSpectrogram();
     void inverseFFT();
     void exportAudio();
     void isolateVocals();
     void isolateVocalsUsingStereoSeperation();
+
     bool isTransient(const float *data, int index);
 
     void applyWindow(float *data, int size);
+    void sliderValueChanged(juce::Slider *slider);
     void isolateVocals(std::vector<float> &magnitudes, int fftSize, float sampleRate);
 
     juce::TextButton loadButton;
     juce::TextButton exportButton;
     juce::TextButton isolateButton;
+    juce::Slider band1Knob;
+    juce::Slider band2Knob;
+    juce::Slider band3Knob;
+    juce::Label band1Label;
+    juce::Label band2Label;
+    juce::Label band3Label;
 
     // In your MainComponent.h file, add this to the private section:
     std::unique_ptr<juce::FileChooser> exportFileChooser;
