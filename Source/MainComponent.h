@@ -35,6 +35,7 @@ private:
     void createSpectrogram();
     void inverseFFT();
     void exportAudio();
+    void matrixTranspose(std::vector<std::vector<float>>& matrix);
     void isolateVocals();
     void isolateVocalsUsingStereoSeperation();
 
@@ -63,6 +64,7 @@ private:
     juce::AudioSampleBuffer audioBuffer;
     juce::dsp::FFT fft;
     std::vector<float> fftData;
+    std::vector<std::vector<float>> amplitudeEnvelope;
     juce::Image spectrogramImage;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

@@ -27,14 +27,14 @@ MainComponent::MainComponent() : fft(12) // 2^12 = 4096 points
     band2Knob.setSliderStyle(juce::Slider::Rotary);
     band2Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
     band2Knob.setRange(0.0, 1.0, 0.01);
-    band2Knob.setValue(0.0);
+    band2Knob.setValue(1.0);
     band2Knob.addListener(this);
     addAndMakeVisible(band2Knob);
 
     band3Knob.setSliderStyle(juce::Slider::Rotary);
     band3Knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 20);
     band3Knob.setRange(0.0, 1.0, 0.01);
-    band3Knob.setValue(0.0);
+    band3Knob.setValue(1.0);
     band3Knob.addListener(this);
     addAndMakeVisible(band3Knob);
 
@@ -179,7 +179,7 @@ void MainComponent::processAudio()
 
             fft.performRealOnlyForwardTransform(fftData.data());
 
-            createSpectrogram();
+            // createSpectrogram();
         }
     }
 
@@ -221,6 +221,7 @@ void MainComponent::createSpectrogram()
 
 void MainComponent::isolateVocalsUsingStereoSeperation()
 {
+    DBG("start isolation");
     const int fftSize = fft.getSize();
     const int numChannels = audioBuffer.getNumChannels();
     const int numSamples = audioBuffer.getNumSamples();
@@ -234,6 +235,13 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
     }
 
     fftData.resize(fftSize * 2);
+
+    amplitudeEnvelope.resize(numSamples / fftSize + 1);
+    for (int i = 0; i < amplitudeEnvelope.size(); i++)
+    {
+        amplitudeEnvelope[i].resize(fftSize * 2);
+    }
+
     std::vector<float> leftChannel(fftSize);
     std::vector<float> rightChannel(fftSize);
 
@@ -258,6 +266,9 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
         juce::FloatVectorOperations::clear(fftData.data(), fftSize * 2);
         juce::FloatVectorOperations::copy(fftData.data(), leftChannel.data(), fftSize);
         fft.performRealOnlyForwardTransform(fftData.data());
+
+        // DBG("Copying envelope data");
+        juce::FloatVectorOperations::copy(amplitudeEnvelope[sample / fftSize].data(), audioBuffer.getReadPointer(0) + sample, fftSize);
 
         std::vector<float> leftSpectrum(fftData.begin(), fftData.begin() + fftSize);
 
@@ -294,10 +305,30 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
         }
     }
 
+    DBG("transposing once");
+
+    matrixTranspose(amplitudeEnvelope);
+
+    DBG("Equalizing");
+
+    for (int i = 0; i < amplitudeEnvelope.size(); i++)
+    {
+       float average = std::accumulate(amplitudeEnvelope[i].begin(), amplitudeEnvelope[i].end(), 0.0) / amplitudeEnvelope.size();
+       std::fill(amplitudeEnvelope[i].begin(), amplitudeEnvelope[i].end(), average);
+    }
+
+    DBG("transposing once");
+
+    matrixTranspose(amplitudeEnvelope);
+    // juce::FloatVectorOperations::copy(processedBuffer.getWritePointer(0), amplitudeEnvelope.data(), fftSize);
+    for (int i = 0; i < amplitudeEnvelope.size(); i++)
+    {
+        juce::FloatVectorOperations::copy(processedBuffer.getWritePointer(0), amplitudeEnvelope[i].data(), fftSize);
+    }
     // Replace the original audio buffer with the processed buffer
     audioBuffer = processedBuffer;
 
-    createSpectrogram();
+    // createSpectrogram();
     repaint();
 }
 
@@ -343,6 +374,18 @@ void MainComponent::isolateVocalsUsingStereoSeperation()
 //     // Process and display the result as needed
 //     processAudio();
 // }
+
+void MainComponent::matrixTranspose(std::vector<std::vector<float>>& matrix)
+{
+    int wh = matrix.size();
+    for (int y = 0; y < wh; ++y)
+    {
+        for (int x = 0; x < y; ++x)
+        {
+            std::swap(matrix[y][x], matrix[x][y]);
+        }
+    }
+}
 
 void MainComponent::exportAudio()
 {
