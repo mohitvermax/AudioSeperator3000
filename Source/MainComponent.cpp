@@ -12,6 +12,10 @@ MainComponent::MainComponent() : fft(12) // 2^12 = 4096 points
     exportButton.setButtonText("Export Audio");
     exportButton.addListener(this);
 
+    addAndMakeVisible(isolateButton);
+    isolateButton.setButtonText("Isolate Audio");
+    isolateButton.addListener(this);
+
     formatManager.registerBasicFormats();
 }
 
@@ -37,6 +41,7 @@ void MainComponent::resized()
 {
     loadButton.setBounds(10, 50, 150, 30);
     exportButton.setBounds(170, 50, 150, 30);
+    isolateButton.setBounds(330, 50, 150, 30);
 }
 
 void MainComponent::buttonClicked(juce::Button *button)
@@ -59,6 +64,10 @@ void MainComponent::buttonClicked(juce::Button *button)
     else if (button == &exportButton)
     {
         exportAudio();
+    }
+    else if (button == &isolateButton)
+    {
+        isolateVocalsUsingStereoSeperation();
     }
 }
 
@@ -153,44 +162,111 @@ void MainComponent::createSpectrogram()
     }
 }
 
-// void MainComponent::inverseFFT()
-// {
-//     const int fftSize = fft.getSize();
-//     const int numChannels = audioBuffer.getNumChannels();
-//     const int numSamples = audioBuffer.getNumSamples();
+void MainComponent::isolateVocalsUsingStereoSeperation()
+{
+    const int fftSize = fft.getSize();
+    const int numChannels = audioBuffer.getNumChannels();
+    const int numSamples = audioBuffer.getNumSamples();
 
-//     if (numChannels == 0 || numSamples == 0)
+    if (numChannels < 2)
+    {
+        // We need stereo audio for this technique
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Error",
+                                               "Stereo audio is required for vocal removal.");
+        return;
+    }
+
+    fftData.resize(fftSize * 2);
+    std::vector<float> leftChannel(fftSize);
+    std::vector<float> rightChannel(fftSize);
+
+    juce::AudioBuffer<float> processedBuffer(numChannels, numSamples);
+
+    for (int sample = 0; sample + fftSize <= numSamples; sample += fftSize)
+    {
+        // Copy data from both channels
+        juce::FloatVectorOperations::copy(leftChannel.data(), audioBuffer.getReadPointer(0) + sample, fftSize);
+        juce::FloatVectorOperations::copy(rightChannel.data(), audioBuffer.getReadPointer(1) + sample, fftSize);
+
+        // Process left channel
+        juce::FloatVectorOperations::clear(fftData.data(), fftSize * 2);
+        juce::FloatVectorOperations::copy(fftData.data(), leftChannel.data(), fftSize);
+        fft.performRealOnlyForwardTransform(fftData.data());
+
+        std::vector<float> leftSpectrum(fftData.begin(), fftData.begin() + fftSize);
+
+        // Process right channel
+        juce::FloatVectorOperations::clear(fftData.data(), fftSize * 2);
+        juce::FloatVectorOperations::copy(fftData.data(), rightChannel.data(), fftSize);
+        fft.performRealOnlyForwardTransform(fftData.data());
+
+        std::vector<float> rightSpectrum(fftData.begin(), fftData.begin() + fftSize);
+
+        // Subtract right from left to remove center channel
+        for (int i = 0; i < fftSize; ++i)
+        {
+            fftData[i] = leftSpectrum[i] - rightSpectrum[i];
+        }
+
+        // Inverse FFT
+        fft.performRealOnlyInverseTransform(fftData.data());
+
+        // Copy the processed data back to both channels
+        for (int channel = 0; channel < numChannels; ++channel)
+        {
+            juce::FloatVectorOperations::copy(processedBuffer.getWritePointer(channel) + sample, fftData.data(), fftSize);
+        }
+    }
+
+    // Replace the original audio buffer with the processed buffer
+    audioBuffer = processedBuffer;
+
+    createSpectrogram();
+    repaint();
+}
+
+// bool MainComponent::isTransient(const float *data, int index)
+// {
+//     // Simple transient detection (you can make this more sophisticated)
+//     const float threshold = 0.02f; // Adjust as needed
+//     return std::abs(data[index] - data[index - 1]) > threshold;
+// }
+
+// void MainComponent::isolateVocals()
+// {
+//     if (audioBuffer.getNumChannels() < 2)
 //     {
-//         DBG("Invalid audio buffer in inverseFFT");
+//         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+//                                                "Processing Error",
+//                                                "The audio file must have at least 2 channels for vocal isolation.");
 //         return;
 //     }
 
-//     // Create a new buffer for the inverse FFT result
-//     juce::AudioSampleBuffer inversedBuffer(numChannels, numSamples);
+//     int numSamples = audioBuffer.getNumSamples();
+//     auto *leftChannel = audioBuffer.getReadPointer(0);
+//     auto *rightChannel = audioBuffer.getReadPointer(1);
 
-//     for (int channel = 0; channel < numChannels; ++channel)
+//     // Create a new buffer to store the vocal-isolated data
+//     juce::AudioBuffer<float> vocalBuffer(1, numSamples);
+//     auto *vocalData = vocalBuffer.getWritePointer(0);
+
+//     for (int i = 0; i < numSamples; ++i)
 //     {
-//         float *channelData = inversedBuffer.getWritePointer(channel);
-//         const float *originalData = audioBuffer.getReadPointer(channel);
-
-//         for (int sample = 0; sample + fftSize <= numSamples; sample += fftSize)
-//         {
-//             // Copy original data to fftData
-//             juce::FloatVectorOperations::copy(fftData.data(), originalData + sample, fftSize);
-
-//             // Zero out the imaginary part
-//             juce::FloatVectorOperations::clear(fftData.data() + fftSize, fftSize);
-
-//             // Perform inverse FFT
-//             fft.performRealOnlyInverseTransform(fftData.data());
-
-//             // Copy the real part of the inverse FFT result to the output buffer
-//             juce::FloatVectorOperations::copy(channelData + sample, fftData.data(), fftSize);
-//         }
+//         // Average the left and right channels to emphasize the center-panned vocals
+//         vocalData[i] = (leftChannel[i] + rightChannel[i]) * 0.5f;
 //     }
 
-//     // Replace the original audio buffer with the inverse FFT result
-//     audioBuffer = inversedBuffer;
+//     // Apply a band-pass filter to focus on vocal frequencies
+//     juce::IIRFilter bandPassFilter;
+//     bandPassFilter.setCoefficients(juce::IIRCoefficients::makeBandPass(44100, 1000.0, 1.0)); // Center frequency at 1kHz
+//     bandPassFilter.processSamples(vocalData, numSamples);
+
+//     // Replace the original audio buffer with the vocal-isolated buffer
+//     audioBuffer = vocalBuffer;
+
+//     // Process and display the result as needed
+//     processAudio();
 // }
 
 void MainComponent::exportAudio()
@@ -199,7 +275,7 @@ void MainComponent::exportAudio()
     // inverseFFT();
 
     // Check if the audio buffer is too large
-    if (audioBuffer.getNumSamples() > 44100 * 60 * 10) // Example: More than 10 minutes of audio at 44.1kHz
+    if (audioBuffer.getNumSamples() > 48000 * 60 * 10) // Example: More than 10 minutes of audio at 48kHz
     {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Export Error",
@@ -247,7 +323,7 @@ void MainComponent::exportAudio()
             juce::WavAudioFormat format;
             std::unique_ptr<juce::AudioFormatWriter> writer;
             writer.reset(format.createWriterFor(new juce::FileOutputStream(file),
-                                                44100,    // Sample rate
+                                                48000,    // Sample rate
                                                 1,        // Number of channels
                                                 16,       // Bit depth
                                                 {},       // Metadata
